@@ -1,4 +1,4 @@
-module github.com/jmoiron/sqlx
+module github.com/x5iu/sqlx
 
 go 1.10
 
