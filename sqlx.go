@@ -51,11 +51,16 @@ func mapper() *reflectx.Mapper {
 
 // isScannable takes the reflect.Type and the actual dest value and returns
 // whether or not it's Scannable.  Something is scannable if:
-//   * it is not a struct
-//   * it implements sql.Scanner
-//   * it has no exported fields
+//   - it doesn't implement FromRow
+//   - it is not a struct
+//   - it implements sql.Scanner
+//   - it has no exported fields
 func isScannable(t reflect.Type) bool {
-	if reflect.PtrTo(t).Implements(_scannerInterface) {
+	p := reflect.PtrTo(t)
+	if p.Implements(_fromRowInterface) {
+		return false
+	}
+	if p.Implements(_scannerInterface) {
 		return true
 	}
 	if t.Kind() != reflect.Struct {
@@ -65,6 +70,15 @@ func isScannable(t reflect.Type) bool {
 	// it's not important that we use the right mapper for this particular object,
 	// we're only concerned on how many exported fields this struct has
 	return len(mapper().TypeMap(t).Index) == 0
+}
+
+type FromRow interface {
+	FromRow(row IRow) error
+}
+
+type IRow interface {
+	Columns() ([]string, error)
+	Scan(dest ...interface{}) error
 }
 
 // ColScanner is an interface used by MapScan and SliceScan
@@ -159,6 +173,7 @@ func mapperFor(i interface{}) *reflectx.Mapper {
 	}
 }
 
+var _fromRowInterface = reflect.TypeOf((*FromRow)(nil)).Elem()
 var _scannerInterface = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
 var _valuerInterface = reflect.TypeOf((*driver.Valuer)(nil)).Elem()
 
@@ -603,6 +618,14 @@ func (r *Rows) StructScan(dest interface{}) error {
 		return errors.New("must pass a pointer, not a value, to StructScan destination")
 	}
 
+	if fr, ok := dest.(FromRow); ok {
+		err := fr.FromRow(r)
+		if err != nil {
+			return err
+		}
+		return r.Err()
+	}
+
 	v = v.Elem()
 
 	if !r.started {
@@ -772,6 +795,10 @@ func (r *Row) scanAny(dest interface{}, structOnly bool) error {
 		return r.Scan(dest)
 	}
 
+	if fr, ok := dest.(FromRow); ok {
+		return fr.FromRow(r)
+	}
+
 	m := r.Mapper
 
 	fields := m.TraversalsByName(v.Type(), columns)
@@ -884,9 +911,9 @@ func structOnlyError(t reflect.Type) error {
 // then each row must only have one column which can scan into that type.  This
 // allows you to do something like:
 //
-//    rows, _ := db.Query("select id from people;")
-//    var ids []int
-//    scanAll(rows, &ids, false)
+//	rows, _ := db.Query("select id from people;")
+//	var ids []int
+//	scanAll(rows, &ids, false)
 //
 // and ids will be a list of the id results.  I realize that this is a desirable
 // interface to expose to users, but for now it will only be exposed via changes
@@ -917,6 +944,8 @@ func scanAll(rows rowsi, dest interface{}, structOnly bool) error {
 	base := reflectx.Deref(slice.Elem())
 	scannable := isScannable(base)
 
+	isFr := reflect.PointerTo(base).Implements(_fromRowInterface)
+
 	if structOnly && scannable {
 		return structOnlyError(base)
 	}
@@ -933,6 +962,7 @@ func scanAll(rows rowsi, dest interface{}, structOnly bool) error {
 
 	if !scannable {
 		var values []interface{}
+		var fields [][]int
 		var m *reflectx.Mapper
 
 		switch rows.(type) {
@@ -942,27 +972,37 @@ func scanAll(rows rowsi, dest interface{}, structOnly bool) error {
 			m = mapper()
 		}
 
-		fields := m.TraversalsByName(base, columns)
-		// if we are not unsafe and are missing fields, return an error
-		if f, err := missingFields(fields); err != nil && !isUnsafe(rows) {
-			return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+		if !isFr {
+			fields = m.TraversalsByName(base, columns)
+			// if we are not unsafe and are missing fields, return an error
+			if f, err := missingFields(fields); err != nil && !isUnsafe(rows) {
+				return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+			}
+			values = make([]interface{}, len(columns))
 		}
-		values = make([]interface{}, len(columns))
 
 		for rows.Next() {
 			// create a new struct type (which returns PtrTo) and indirect it
 			vp = reflect.New(base)
 			v = reflect.Indirect(vp)
 
-			err = fieldsByTraversal(v, fields, values, true)
-			if err != nil {
-				return err
-			}
+			if isFr {
+				fr := vp.Interface().(FromRow)
+				err = fr.FromRow(rows)
+				if err != nil {
+					return err
+				}
+			} else {
+				err = fieldsByTraversal(v, fields, values, true)
+				if err != nil {
+					return err
+				}
 
-			// scan into the struct field pointers and append to our results
-			err = rows.Scan(values...)
-			if err != nil {
-				return err
+				// scan into the struct field pointers and append to our results
+				err = rows.Scan(values...)
+				if err != nil {
+					return err
+				}
 			}
 
 			if isPtr {
