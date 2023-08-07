@@ -18,6 +18,25 @@ In addition to the [godoc API documentation](http://godoc.org/github.com/x5iu/sq
 there is also some [user documentation](http://jmoiron.github.io/sqlx/) that
 explains how to use `database/sql` along with sqlx.
 
+## Tips
+
+If the **PATCH** version number is even, you can use `replace` syntax in your `go.mod` file:
+
+```
+replace github.com/jmoiron/sqlx => github.com/x5iu/sqlx v1.4.0
+                                                             👆🏻 even
+```
+
+Otherwise, use `github.com/x5iu/sqlx` in your `go.mod` directly if **PATCH** version number
+is odd:
+
+```
+require (
+    github.com/x5iu/sqlx v1.4.1
+                              👆🏻 odd
+)
+```
+
 ## Recent Changes
 
 1.3.0:
