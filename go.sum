@@ -1,0 +1,4 @@
+github.com/x5iu/defc v1.29.0 h1:VEmIhNJSc5DteuIbaXz4aSWgVjsyIMxwQz5N7xSFKRc=
+github.com/x5iu/defc v1.29.0/go.mod h1:dN8onpbLFbtg7OZeMaYWNmn3yc3BaAbjRos9XXoRyeY=
+github.com/x5iu/sqlx v1.4.3 h1:9ckEYEB4rwOloSzhzeFI19l/9n7QAaBFRnGr/f0gwQA=
+github.com/x5iu/sqlx v1.4.3/go.mod h1:x3B6RhKd6yU2O33KliE443RF3hdlo+o16DDyjd3Lm0g=
