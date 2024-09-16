@@ -83,4 +83,8 @@ func Rebind(bindType int, query string) string {
 // In expands slice values in args, returning the modified query string
 // and a new arg list that can be executed by a database. The `query` should
 // use the `?` bindVar.  The return value uses the `?` bindVar.
-var In = defc.In[[]any]
+func In(query string, args ...any) (string, []any, error) {
+	return in(query, args)
+}
+
+var in = defc.In[[]any]
